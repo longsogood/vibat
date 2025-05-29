@@ -79,14 +79,12 @@ def query_with_retry(url, payload, max_retries=3, delay=1):
 
 def process_single_question(question, true_answer, index, total_questions):
     try:
-        # Lấy câu trả lời từ VIB agent
         vib_response = query_with_retry(VIB_API_URL, {"question": question})
         if not vib_response:
             progress_queue.put(f"ERROR Lỗi khi lấy câu trả lời từ agent cho câu hỏi {index + 1}")
             return None
         vib_response = vib_response.json()["text"]
         
-        # Đánh giá câu trả lời
         evaluate_human_prompt = evaluate_human_prompt_template.format(
             question=question,
             true_answer=true_answer,
@@ -109,7 +107,11 @@ def process_single_question(question, true_answer, index, total_questions):
             progress_queue.put(f"ERROR Lỗi khi đánh giá câu trả lời cho câu hỏi {index + 1}")
             return None
         evaluate_response = evaluate_response.json()["text"]
-        evaluate_result = extract_section(evaluate_response)
+        try:
+            evaluate_result = extract_section(evaluate_response)
+        except Exception as e:
+            st.error(f"Lỗi khi trích xuất kết quả đánh giá: {str(e)}")
+            return None
         
         progress_queue.put(f"SUCCESS Đã xử lý thành công câu hỏi {index + 1}/{total_questions}")
         
@@ -207,8 +209,8 @@ with tab2:
                 st.error("File Excel phải có ít nhất 2 cột: câu hỏi và câu trả lời chuẩn")
                 st.stop()
                 
-            questions = df.iloc[:, 0].tolist()
-            true_answers = df.iloc[:, 1].tolist()
+            questions = df.iloc[:, 1].tolist()
+            true_answers = df.iloc[:, 2].tolist()
             
             # Tạo DataFrame để hiển thị
             display_df = pd.DataFrame({
@@ -241,13 +243,13 @@ with tab2:
                             'Question': [r["question"] for r in results],
                             'True Answer': [r["true_answer"] for r in results],
                             'Agent Answer': [r["vib_response"] for r in results],
-                            'Information Coverage Score': [r["evaluate_result"]["scores"]["Information Coverage"] for r in results],
-                            'Hallucination Score': [r["evaluate_result"]["scores"]["Information Accuracy and Relevance"] for r in results],
-                            'Format Score': [r["evaluate_result"]["scores"]["Format"] for r in results],
-                            'Language Score': [r["evaluate_result"]["scores"]["Language"] for r in results],
-                            'Handling Unknown Score': [r["evaluate_result"]["scores"]["Handling Unknown"] for r in results],
-                            'Average Score': [r["evaluate_result"]["scores"]["Average"] for r in results],
-                            'Comment': [r["evaluate_result"]["Nhận xét và góp ý cải thiện"] for r in results]
+                            'Information Coverage Score': [r["evaluate_result"]["scores"].get("Information Coverage", 0) for r in results],
+                            'Hallucination Score': [r["evaluate_result"]["scores"].get("Information Accuracy and Relevance", 0) for r in results],
+                            'Format Score': [r["evaluate_result"]["scores"].get("Format", 0) for r in results],
+                            'Language Score': [r["evaluate_result"]["scores"].get("Language", 0) for r in results],
+                            'Handling Unknown Score': [r["evaluate_result"]["scores"].get("Handling Unknown", 0) for r in results],
+                            'Average Score': [r["evaluate_result"]["scores"].get("Average", 0) for r in results],
+                            'Comment': [r["evaluate_result"].get("Nhận xét và góp ý cải thiện", "") for r in results]
                         }
                         
                         results_df = pd.DataFrame(data)
